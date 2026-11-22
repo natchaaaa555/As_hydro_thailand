@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ระบบแบบจำลองทางอุทกพลศาสตร์และการแพร่กระจายมวลสารในลุ่มน้ำหลักของประเทศไทย</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Sarabun', sans-serif;
+      background-color: #f1f5f9;
+      color: #0f172a;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    #map {
+      height: 100vh;
+      width: 100vw;
+      z-index: 1;
+    }
+    .station-tag {
+      background: rgba(255, 255, 255, 0.94);
+      border: 1.5px solid #1e3a8a;
+      color: #0f172a;
+      font-family: 'Sarabun', sans-serif;
+      font-weight: 700;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 3px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body class="relative overflow-hidden">
+
+  <!-- แผนที่ฐานดาวเทียมและขอบเขตการปกครอง -->
+  <div id="map"></div>
+
+  <!-- แถบหัวข้อเชิงสถาบันด้านบนสุด -->
+  <header class="absolute top-0 left-0 right-0 z-[1001] bg-slate-900 text-white px-5 py-2.5 border-b border-slate-700 shadow-md flex justify-between items-center">
+    <div>
+      <div class="text-[11px] text-slate-300 tracking-wide uppercase">
+        Hydro-Environmental Transport &amp; Surface Water Quality Information System
+      </div>
+      <h1 class="text-base font-bold tracking-tight text-white">
+        ระบบสารสนเทศทางอุทกพลศาสตร์และการประเมินการแพร่กระจายสารหนู (As) ในลุ่มน้ำหลักของประเทศไทย
+      </h1>
+    </div>
+    <div class="text-right hidden md:block">
+      <div class="text-[11px] text-slate-300">แบบจำลองเชิงคณิตศาสตร์: <span class="mono text-sky-300">1D Advection–Dispersion Model (PDE)</span></div>
+      <div class="text-[11px] text-slate-400">เกณฑ์อ้างอิง: ประกาศคณะกรรมการสิ่งแวดล้อมแห่งชาติ ฉบับที่ 8 (พ.ศ. 2537)</div>
+    </div>
+  </header>
+
+  <!-- แผงควบคุมและข้อมูลสถานีตรวจวัด (ซ้ายมือ) -->
+  <aside class="absolute top-16 left-3 z-[1000] bg-white/95 backdrop-blur-sm rounded-md border border-slate-300 shadow-lg w-[390px] max-h-[calc(100vh-5rem)] flex flex-col">
+    <div class="p-3.5 border-b border-slate-200 bg-slate-50 rounded-t-md">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-bold text-slate-700 uppercase tracking-wider">พารามิเตอร์เชิงพื้นที่และอุทกวิทยา</span>
+        <span id="speedBadge" class="mono text-[11px] bg-slate-200 text-slate-800 px-2 py-0.5 rounded font-semibold">u = 2.10 km/h</span>
+      </div>
+
+      <!-- ตัวเลือกลุ่มน้ำหลัก 14 ลุ่มน้ำ -->
+      <div class="mb-2.5">
+        <label for="basinSelect" class="block text-xs font-semibold text-slate-700 mb-1">1. พื้นที่ลุ่มน้ำศึกษา (River Basin):</label>
+        <select id="basinSelect" onchange="changeBasin()" class="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-blue-800">
+          <optgroup label="ภาคเหนือ และ ลุ่มน้ำโขงเหนือ">
+            <option value="1">ลุ่มน้ำสาย – แม่น้ำรวก (อ.แม่สาย – อ.เชียงแสน)</option>
+            <option value="2">ลุ่มน้ำกก (อ.แม่อาย – อ.เมืองเชียงราย – อ.เชียงแสน)</option>
+            <option value="3">ลุ่มน้ำปิง (อ.เชียงดาว – จ.เชียงใหม่ – จ.นครสวรรค์)</option>
+            <option value="4">ลุ่มน้ำวัง (อ.วังเหนือ – จ.ลำปาง – จ.ตาก)</option>
+            <option value="5">ลุ่มน้ำยม (อ.ปง – จ.แพร่ – จ.สุโขทัย – จ.นครสวรรค์)</option>
+            <option value="6">ลุ่มน้ำน่าน (อ.บ่อเกลือ – จ.น่าน – จ.พิษณุโลก – จ.นครสวรรค์)</option>
+          </optgroup>
+          <optgroup label="ภาคตะวันออกเฉียงเหนือ">
+            <option value="7">ลุ่มน้ำโขงตะวันออกเฉียงเหนือ (อ.เชียงคาน – จ.นครพนม – อ.โขงเจียม)</option>
+            <option value="8">ลุ่มน้ำชี (จ.ชัยภูมิ – จ.ขอนแก่น – จ.ยโสธร – จ.อุบลราชธานี)</option>
+            <option value="9">ลุ่มน้ำมูล (จ.นครราชสีมา – จ.บุรีรัมย์ – จ.อุบลราชธานี)</option>
+          </optgroup>
+          <optgroup label="ภาคกลาง และ ภาคตะวันตก">
+            <option value="10">ลุ่มน้ำเจ้าพระยา (จ.นครสวรรค์ – จ.พระนครศรีอยุธยา – จ.สมุทรปราการ)</option>
+            <option value="11">ลุ่มน้ำท่าจีน (จ.ชัยนาท – จ.สุพรรณบุรี – จ.สมุทรสาคร)</option>
+            <option value="12">ลุ่มน้ำแม่กลอง (จ.กาญจนบุรี – จ.ราชบุรี – จ.สมุทรสงคราม)</option>
+          </optgroup>
+          <optgroup label="ภาคตะวันออก">
+            <option value="13">ลุ่มน้ำบางปะกง (อ.กบินทร์บุรี – จ.ปราจีนบุรี – จ.ฉะเชิงเทรา)</option>
+          </optgroup>
+          <optgroup label="ภาคใต้">
+            <option value="14">ลุ่มน้ำตาปี (อ.ฉวาง – อ.พระแสง – จ.สุราษฎร์ธานี)</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <!-- ตัวเลือกเงื่อนไขขอบเขตต้นน้ำ -->
+      <div>
+        <label for="scenarioSelect" class="block text-xs font-semibold text-slate-700 mb-1">2. เงื่อนไขการปนเปื้อนต้นน้ำ (Boundary Condition):</label>
+        <select id="scenarioSelect" onchange="fetchForecast()" class="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-blue-800">
+          <option value="mining_spill">กรณีศึกษาที่ 1: การระบายตะกอนแร่ความเข้มข้นสูง (C₀ = 0.055 mg/L)</option>
+          <option value="heavy_rain">กรณีศึกษาที่ 2: สภาวะน้ำหลากชะล้างตะกอนท้องน้ำ (C₀ = 0.028 mg/L)</option>
+          <option value="normal">กรณีศึกษาที่ 3: สภาวะพื้นฐานตามธรรมชาติ (Baseline, C₀ = 0.004 mg/L)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- รายการสถานีตรวจวัด -->
+    <div class="p-3.5 flex-1 overflow-hidden flex flex-col">
+      <div class="flex justify-between items-center mb-2 pb-1 border-b border-slate-200">
+        <h2 class="text-xs font-bold text-slate-800">ข้อมูลสถานีตรวจวัดตามแนวลำน้ำ</h2>
+        <span class="text-[11px] text-slate-500">เกณฑ์มาตรฐาน ≤ 0.0100 mg/L</span>
+      </div>
+      <div id="stationList" class="space-y-2 overflow-y-auto pr-1 text-xs flex-1"></div>
+    </div>
+  </aside>
+
+  <!-- แผงกราฟวิเคราะห์เชิงปริมาณ (ขวามือบน) -->
+  <section class="absolute top-16 right-3 z-[1000] bg-white/95 backdrop-blur-sm p-3.5 rounded-md border border-slate-300 shadow-lg w-[430px]">
+    <div class="flex justify-between items-center border-b border-slate-200 pb-1.5 mb-2">
+      <div>
+        <h2 class="text-xs font-bold text-slate-900">กราฟการกระจายตัวของความเข้มข้นสารหนูตามระยะทาง</h2>
+        <p id="basinSummaryText" class="text-[11px] text-slate-500">ความยาวลำน้ำศึกษา: 34.0 กม.</p>
+      </div>
+      <span class="text-[10px] font-semibold text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded">ค่ามาตรฐาน: 0.01 mg/L</span>
+    </div>
+    <div class="h-48 w-full">
+      <canvas id="arsenicChart"></canvas>
+    </div>
+    <div class="mt-2 pt-1.5 border-t border-slate-100 text-[10px] text-slate-500 flex justify-between">
+      <span>สมการ: ∂C/∂t + u(∂C/∂x) = D_L(∂²C/∂x²) − kC</span>
+      <span class="mono">หน่วย: mg/L</span>
+    </div>
+  </section>
+
+  <!-- แผงควบคุมช่วงเวลาจำลอง (ขวามือล่าง) -->
+  <section class="absolute bottom-4 right-3 z-[1000] bg-white/95 backdrop-blur-sm p-3.5 rounded-md border border-slate-300 shadow-lg w-[430px]">
+    <div class="flex justify-between items-center mb-1.5">
+      <span class="text-xs font-bold text-slate-800">ช่วงเวลาจำลองการเคลื่อนที่ (Simulation Time, t):</span>
+      <span id="hourDisplay" class="mono text-sm font-bold text-blue-900 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded">t = 0 ชม. (0.0 วัน)</span>
+    </div>
+    <input id="hourSlider" type="range" min="0" max="168" value="0" oninput="updateHour(this.value)" class="w-full accent-blue-900 cursor-pointer" />
+    <div class="flex justify-between text-[10px] text-slate-600 font-medium mt-1 mono">
+      <span>t = 0h</span>
+      <span>24h (1d)</span>
+      <span>72h (3d)</span>
+      <span>120h (5d)</span>
+      <span>168h (7d)</span>
+    </div>
+  </section>
+
+  <script>
+    // ตั้งค่าแผนที่ฐานดาวเทียมและเลเยอร์ชื่อสถานที่ทางภูมิศาสตร์
+    const map = L.map('map', { zoomControl: false }).setView([20.415, 99.965], 12);
+    L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Imagery &copy; Esri'
+    }).addTo(map);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Boundaries &amp; Places &copy; Esri'
+    }).addTo(map);
+
+    let markersLayer = L.layerGroup().addTo(map);
+    let labelsLayer = L.layerGroup().addTo(map);
+    let riverLine = null;
+    let shouldFlyToBasin = true;
+
+    // ตั้งค่ากราฟเชิงวิชาการ (Chart.js)
+    const ctx = document.getElementById('arsenicChart').getContext('2d');
+    const arsenicChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'ความเข้มข้นสารหนู (mg/L)',
+            data: [],
+            borderColor: '#1e3a8a',
+            backgroundColor: 'rgba(30, 58, 138, 0.12)',
+            borderWidth: 2,
+            pointRadius: 4.5,
+            pointBackgroundColor: [],
+            pointBorderColor: '#ffffff',
+            pointBorderWidth: 1.5,
+            fill: true,
+            tension: 0.25
+          },
+          {
+            label: 'เกณฑ์มาตรฐานน้ำผิวดิน (0.01 mg/L)',
+            data: [],
+            borderColor: '#b91c1c',
+            borderWidth: 1.5,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: {
+              color: '#334155',
+              font: { family: 'Sarabun', size: 11, weight: '600' }
+            }
+          }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'ระยะทางจากสถานีต้นน้ำ (กิโลเมตร)', color: '#475569', font: { family: 'Sarabun', size: 10 } },
+            ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 9 } },
+            grid: { color: '#e2e8f0' }
+          },
+          y: {
+            beginAtZero: true,
+            suggestedMax: 0.06,
+            title: { display: true, text: 'ความเข้มข้น (mg/L)', color: '#475569', font: { family: 'Sarabun', size: 10 } },
+            ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 9 } },
+            grid: { color: '#e2e8f0' }
+          }
+        }
+      }
+    });
+
+    function changeBasin() {
+      shouldFlyToBasin = true;
+      document.getElementById('hourSlider').value = 0;
+      document.getElementById('hourDisplay').innerText = "t = 0 ชม. (0.0 วัน)";
+      fetchForecast();
+    }
+
+    function updateHour(val) {
+      const days = (val / 24).toFixed(1);
+      document.getElementById('hourDisplay').innerText = `t = ${val} ชม. (${days} วัน)`;
+      fetchForecast();
+    }
+
+    async function fetchForecast() {
+      const basinId = document.getElementById('basinSelect').value;
+      const hour = document.getElementById('hourSlider').value;
+      const scenario = document.getElementById('scenarioSelect').value;
+
+      try {
+        const res = await fetch(`/api/v1/forecast?basin_id=${basinId}&hour=${hour}&scenario=${scenario}`);
+        const data = await res.json();
+
+        document.getElementById('speedBadge').innerText = `u = ${data.basin.flow_speed_kmh} km/h`;
+        document.getElementById('basinSummaryText').innerText = `${data.basin.region} | ความยาวลำน้ำศึกษา: ${data.basin.total_length_km} กม.`;
+
+        if (shouldFlyToBasin) {
+          map.flyTo(data.basin.center, data.basin.zoom, { duration: 1.2 });
+          shouldFlyToBasin = false;
+        }
+
+        renderMapAndChart(data.features, data.basin.basin_name);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function renderMapAndChart(features, basinName) {
+      markersLayer.clearLayers();
+      labelsLayer.clearLayers();
+      if (riverLine) map.removeLayer(riverLine);
+
+      const coords = [];
+      const listHtml = [];
+      const chartLabels = [];
+      const chartValues = [];
+      const chartStandard = [];
+      const pointColors = [];
+
+      features.forEach(f => {
+        const [lon, lat] = f.geometry.coordinates;
+        const p = f.properties;
+        coords.push([lat, lon]);
+
+        let color = '#15803d'; // เขียวเข้มมาตรฐาน
+        let cardStyle = 'border-slate-200 bg-white';
+        let badgeStyle = 'bg-emerald-50 text-emerald-800 border-emerald-300';
+
+        if (p.risk_level === 'CRITICAL') {
+          color = '#b91c1c'; // แดงเข้มมาตรฐาน
+          cardStyle = 'border-red-300 bg-red-50/40';
+          badgeStyle = 'bg-red-100 text-red-900 border-red-300';
+        } else if (p.risk_level === 'WARNING') {
+          color = '#b45309'; // ส้มอำพันเข้ม
+          cardStyle = 'border-amber-300 bg-amber-50/40';
+          badgeStyle = 'bg-amber-100 text-amber-900 border-amber-300';
+        }
+
+        chartLabels.push(`${p.distance_km}`);
+        chartValues.push(p.arsenic_mgl);
+        chartStandard.push(0.01);
+        pointColors.push(color);
+
+        const circle = L.circleMarker([lat, lon], {
+          radius: p.risk_level === 'CRITICAL' ? 11 : (p.risk_level === 'WARNING' ? 9 : 7),
+          fillColor: color,
+          color: '#ffffff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.92
+        }).bindPopup(`
+          <div style="color:#0f172a; font-family: 'Sarabun', sans-serif; min-width: 210px; line-height: 1.4;">
+            <div style="font-weight:700; font-size:13px; border-bottom:1px solid #cbd5e1; padding-bottom:3px; margin-bottom:4px;">${p.station_name}</div>
+            <div style="font-size:11px; color:#475569;">ที่ตั้ง: ${p.subdistrict} (กม.ที่ ${p.distance_km})</div>
+            <div style="font-size:12px; margin-top:4px;">ความเข้มข้นสารหนู: <b style="color:${color}; font-family:'JetBrains Mono',monospace;">${p.arsenic_mgl.toFixed(4)} mg/L</b></div>
+            <div style="font-size:11px;">เกณฑ์มาตรฐานน้ำผิวดิน: 0.0100 mg/L</div>
+            <div style="font-size:11px; font-weight:600; color:#1e3a8a; margin-top:3px;">สถานะเวลา: ${p.eta_text}</div>
+          </div>
+        `);
+        markersLayer.addLayer(circle);
+
+        const shortName = p.station_name.replace('สถานี', '').split('(')[0].trim();
+        const label = L.marker([lat, lon], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div class="station-tag" style="border-left: 4px solid ${color};">${shortName} [${p.arsenic_mgl.toFixed(4)}]</div>`,
+            iconAnchor: [-10, 10]
+          })
+        });
+        labelsLayer.addLayer(label);
+
+        listHtml.push(`
+          <div class="p-2.5 rounded border ${cardStyle}">
+            <div class="flex justify-between items-start gap-1.5">
+              <div class="font-bold text-slate-900 leading-snug">${p.station_name}</div>
+              <span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${badgeStyle} shrink-0">${p.risk_th}</span>
+            </div>
+            <div class="text-[11px] text-slate-600 mt-0.5">${p.subdistrict} (ระยะทาง x = ${p.distance_km} กม.)</div>
+            <div class="flex justify-between items-center mt-1.5 pt-1.5 border-t border-slate-200/80 text-[11px]">
+              <span class="text-slate-700">ค่า As: <b class="mono text-slate-900">${p.arsenic_mgl.toFixed(4)} mg/L</b></span>
+              <span class="text-blue-900 font-semibold">${p.eta_text}</span>
+            </div>
+          </div>
+        `);
+      });
+
+      riverLine = L.polyline(coords, { color: '#1d4ed8', weight: 3.5, opacity: 0.85, dashArray: '6, 4' }).addTo(map);
+      
+      const midIdx = Math.floor(coords.length / 2);
+      L.marker(coords[midIdx], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div style="background:#0f172a; color:#ffffff; border:1px solid #94a3b8; font-family:'Sarabun',sans-serif; font-weight:700; font-size:11px; padding:2px 8px; border-radius:3px; white-space:nowrap; box-shadow:0 2px 5px rgba(0,0,0,0.4);">แนวลำน้ำ: ${basinName}</div>`,
+          iconAnchor: [90, -14]
+        })
+      }).addTo(labelsLayer);
+
+      document.getElementById('stationList').innerHTML = listHtml.join('');
+
+      arsenicChart.data.labels = chartLabels;
+      arsenicChart.data.datasets[0].data = chartValues;
+      arsenicChart.data.datasets[0].pointBackgroundColor = pointColors;
+      arsenicChart.data.datasets[1].data = chartStandard;
+      arsenicChart.update();
+    }
+
+    fetchForecast();
+  </script>
+</body>
+</html>
